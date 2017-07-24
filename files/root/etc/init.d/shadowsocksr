@@ -106,7 +106,9 @@ start_rules() {
 		-a "$(config_foreach get_lan_hosts lan_hosts)" \
 		-e "$(uci_get_by_type access_control ipt_ext)" \
 		$(get_arg_out) $(get_arg_udp)
+}
 
+fw_reinit() {
 	if [ "Z$?" = "Z0" -a "Z$(uci_get_by_type access_control wan_bp_list)" = "Z/dev/flag_gfwlist" ]; then
 		[ $(ipset list gfwlist | wc -l) -lt 1 ] && /etc/init.d/dnsmasq-extra restart
 		idx=$(($(iptables -t nat -L SSR_SPEC_WAN_AC | grep all | sed -n -e '/ssr_spec_dst_bp/=') +1))
@@ -115,6 +117,10 @@ start_rules() {
 		iptables -t mangle -I SSR_SPEC_WAN_AC $idx -m set ! --match-set gfwlist dst -j RETURN 2>/dev/null \
 			|| echo "# Transparent Proxy: UDP    NOT ENABLED"
 	fi
+
+	uci -q show firewall | sed -n 's/.*path=//p' | sed -n '/adbyby\|koolproxy\|dnsmasq/p' | tr -d \' | while read init; do
+		sh $init restart >/dev/null 2>&1
+	done
 }
 
 rules() {
@@ -122,7 +128,7 @@ rules() {
 		logger -st $NAME -p3 "ssr-redir not running."
 		return 1
 	fi
-	start_rules || /usr/bin/ssr-rules -f
+	start_rules && fw_reinit || /usr/bin/ssr-rules -f
 }
 
 start_redir() {
